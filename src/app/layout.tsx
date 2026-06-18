@@ -19,7 +19,6 @@ export default function RootLayout({
           <span className="brand">📋 한국어반 출석</span>
           <Link href="/attendance">출석체크</Link>
           <Link href="/groups">조 편성</Link>
-          <Link href="/admin">관리자</Link>
         </nav>
         {children}
       </body>
