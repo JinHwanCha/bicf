@@ -13,6 +13,94 @@
   --radius: 12px;
 }
 
+/* ── 테마 팔레트 ─────────────────────────────────────────── */
+/* 다크 블루 (기본) = :root */
+
+[data-theme="teal"] {
+  --bg: #0c1c1c;
+  --panel: #12302e;
+  --panel-2: #1a403c;
+  --border: #285450;
+  --text: #e6fffb;
+  --muted: #8fc7be;
+  --primary: #16c2a3;
+  --primary-hover: #11a98d;
+}
+
+[data-theme="purple"] {
+  --bg: #160f29;
+  --panel: #251a40;
+  --panel-2: #312252;
+  --border: #443066;
+  --text: #f0e9ff;
+  --muted: #b8a7d0;
+  --primary: #9a6bff;
+  --primary-hover: #8553f0;
+}
+
+[data-theme="rose"] {
+  --bg: #261016;
+  --panel: #3d1a25;
+  --panel-2: #522231;
+  --border: #6b3344;
+  --text: #ffe9ef;
+  --muted: #d3a3b3;
+  --primary: #ff5c8a;
+  --primary-hover: #f0467a;
+}
+
+[data-theme="charcoal"] {
+  --bg: #131316;
+  --panel: #1e1e23;
+  --panel-2: #2a2a31;
+  --border: #3a3a44;
+  --text: #ececf2;
+  --muted: #a0a0ad;
+  --primary: #f2994a;
+  --primary-hover: #e0853a;
+}
+
+[data-theme="light"] {
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --panel-2: #eef1f8;
+  --border: #d8deeb;
+  --text: #1c2336;
+  --muted: #5d6885;
+  --primary: #3d6aef;
+  --primary-hover: #2f57d6;
+  --success: #1ca35a;
+  --danger: #e0354d;
+  --warn: #d99313;
+}
+
+/* 헤더의 테마 색상 선택 버튼 */
+.theme-switch {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-switch .swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.theme-switch .swatch:hover {
+  transform: scale(1.12);
+  background: initial;
+}
+
+.theme-switch .swatch.active {
+  border-color: var(--text);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -208,6 +296,24 @@ button.danger {
 button.danger:hover {
   background: var(--danger);
   color: #fff;
+}
+
+/* 인라인으로 수정 가능한 이름 셀 */
+button.name-cell {
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--border);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 2px 2px;
+  border-radius: 0;
+}
+
+button.name-cell:hover {
+  background: transparent;
+  border-bottom-color: var(--primary);
+  color: var(--primary);
 }
 
 button.small {

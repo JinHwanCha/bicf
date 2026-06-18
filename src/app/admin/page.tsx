@@ -13,6 +13,69 @@ import {
 
 type Tab = "groups" | "attendance" | "people" | "settings";
 
+/** Extract the "N월" month label from a week label like "9월 2주차". */
+function monthOf(label: string): string {
+  const m = label.match(/(\d+)\s*월/);
+  return m ? `${m[1]}월` : "기타";
+}
+
+/** Inline-editable name cell: click to edit, Enter/blur to save, Esc to cancel. */
+function EditableName({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (name: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  async function commit() {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) {
+      await onSave(trimmed);
+    } else {
+      setDraft(value);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="name-cell"
+        title="클릭하여 이름 수정"
+        onClick={() => setEditing(true)}
+      >
+        {value} ✎
+      </button>
+    );
+  }
+
+  return (
+    <input
+      type="text"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") {
+          setDraft(value);
+          setEditing(false);
+        }
+      }}
+      style={{ width: 150 }}
+    />
+  );
+}
+
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("groups");
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -305,15 +368,41 @@ function AttendanceTab({
   const students = people.filter((p) => !p.isTeacher);
   const teachers = people.filter((p) => p.isTeacher);
 
+  // Months present in the week list, in their original order.
+  const months = useMemo(() => {
+    const seen: string[] = [];
+    for (const w of settings.weeks) {
+      const mo = monthOf(w.label);
+      if (!seen.includes(mo)) seen.push(mo);
+    }
+    return seen;
+  }, [settings.weeks]);
+
+  const currentMonth = monthOf(
+    settings.weeks.find((w) => w.id === settings.currentWeekId)?.label ?? ""
+  );
+
+  // "전체" shows all weeks; otherwise only the selected month's weeks.
+  const [monthFilter, setMonthFilter] = useState<string>(
+    months.includes(currentMonth) ? currentMonth : "전체"
+  );
+
+  const visibleWeeks =
+    monthFilter === "전체"
+      ? settings.weeks
+      : settings.weeks.filter((w) => monthOf(w.label) === monthFilter);
+
   const currentWeekCount = semesterRecords.filter(
     (a) => a.weekId === settings.currentWeekId
   ).length;
 
+  // Attendance rate over the currently visible weeks (selected month or all).
   function rate(personId: string): number {
-    const attended = settings.weeks.filter((w) =>
+    const denom = visibleWeeks.length || 1;
+    const attended = visibleWeeks.filter((w) =>
       attendedSet.has(`${personId}::${w.id}`)
     ).length;
-    return Math.round((attended / totalWeeks) * 100);
+    return Math.round((attended / denom) * 100);
   }
 
   const sorted = [...people].sort((a, b) => {
@@ -350,61 +439,87 @@ function AttendanceTab({
         {people.length === 0 ? (
           <p className="muted">아직 등록된 인원이 없습니다.</p>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>이름</th>
-                  <th>구분</th>
-                  <th>수준</th>
-                  {settings.weeks.map((w) => (
-                    <th key={w.id}>{w.label}</th>
-                  ))}
-                  <th>출석률</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((p) => (
-                  <tr key={p.id}>
-                    <td>{p.name}</td>
-                    <td>
-                      {p.isTeacher ? (
-                        <span className="tag teacher">선생님</span>
-                      ) : (
-                        <span className="tag">학생</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`tag lvl-${p.level}`}>{p.level}</span>
-                    </td>
-                    {settings.weeks.map((w) => (
-                      <td key={w.id}>
-                        {attendedSet.has(`${p.id}::${w.id}`) ? (
-                          <span className="check">●</span>
+          <>
+            {months.length > 1 && (
+              <div className="tabs" style={{ marginBottom: 16 }}>
+                <button
+                  className={monthFilter === "전체" ? "active" : ""}
+                  onClick={() => setMonthFilter("전체")}
+                >
+                  전체
+                </button>
+                {months.map((mo) => (
+                  <button
+                    key={mo}
+                    className={monthFilter === mo ? "active" : ""}
+                    onClick={() => setMonthFilter(mo)}
+                  >
+                    {mo}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="muted" style={{ marginTop: -4, marginBottom: 12 }}>
+              {monthFilter === "전체"
+                ? `전체 ${visibleWeeks.length}개 주차 · 출석률은 전체 기준`
+                : `${monthFilter} ${visibleWeeks.length}개 주차 · 출석률은 ${monthFilter} 기준`}
+            </p>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>이름</th>
+                    <th>구분</th>
+                    <th>수준</th>
+                    {visibleWeeks.map((w) => (
+                      <th key={w.id}>{w.label}</th>
+                    ))}
+                    <th>출석률</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td>
+                        {p.isTeacher ? (
+                          <span className="tag teacher">선생님</span>
                         ) : (
-                          <span className="dash">—</span>
+                          <span className="tag">학생</span>
                         )}
                       </td>
-                    ))}
-                    <td>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <div className="rate-bar">
-                          <div style={{ width: `${rate(p.id)}%` }} />
+                      <td>
+                        <span className={`tag lvl-${p.level}`}>{p.level}</span>
+                      </td>
+                      {visibleWeeks.map((w) => (
+                        <td key={w.id}>
+                          {attendedSet.has(`${p.id}::${w.id}`) ? (
+                            <span className="check">●</span>
+                          ) : (
+                            <span className="dash">—</span>
+                          )}
+                        </td>
+                      ))}
+                      <td>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <div className="rate-bar">
+                            <div style={{ width: `${rate(p.id)}%` }} />
+                          </div>
+                          <span>{rate(p.id)}%</span>
                         </div>
-                        <span>{rate(p.id)}%</span>
-                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </>
@@ -469,7 +584,15 @@ function PeopleTab({
             <tbody>
               {sorted.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.name}</td>
+                  <td>
+                    <EditableName
+                      value={p.name}
+                      onSave={async (name) => {
+                        await patch(p.id, { name });
+                        flash(`이름을 '${name}'(으)로 변경했습니다.`);
+                      }}
+                    />
+                  </td>
                   <td className="muted">{p.phoneLast4}</td>
                   <td>
                     <select
@@ -539,14 +662,33 @@ function SettingsTab({
   const [signupDeadline, setSignupDeadline] = useState(settings.signupDeadline);
   const [classTime, setClassTime] = useState(settings.classTime);
   const [weeks, setWeeks] = useState<Week[]>(settings.weeks);
+  const [newMonth, setNewMonth] = useState<number>(9);
   const [saving, setSaving] = useState(false);
 
   function updateWeekLabel(id: string, label: string) {
     setWeeks((ws) => ws.map((w) => (w.id === id ? { ...w, label } : w)));
   }
   function addWeek() {
-    const id = `w${Date.now().toString(36)}`;
-    setWeeks((ws) => [...ws, { id, label: `${ws.length + 1}주차` }]);
+    setWeeks((ws) => {
+      const last = ws[ws.length - 1];
+      const mo = last?.label.match(/(\d+)\s*월/)?.[1] ?? "";
+      const moCount = ws.filter(
+        (w) => w.label.match(/(\d+)\s*월/)?.[1] === mo
+      ).length;
+      const id = `w${Date.now().toString(36)}`;
+      const label = mo ? `${mo}월 ${moCount + 1}주차` : `${ws.length + 1}주차`;
+      return [...ws, { id, label }];
+    });
+  }
+  function addMonth(month: number) {
+    const base = Date.now().toString(36);
+    setWeeks((ws) => [
+      ...ws,
+      ...[1, 2, 3, 4].map((n, i) => ({
+        id: `w${base}${i}`,
+        label: `${month}월 ${n}주차`,
+      })),
+    ]);
   }
   function removeWeek(id: string) {
     setWeeks((ws) => ws.filter((w) => w.id !== id));
@@ -625,26 +767,64 @@ function SettingsTab({
       </div>
 
       <h3 style={{ marginTop: 14 }}>주차 목록</h3>
-      {weeks.map((w) => (
-        <div className="row" key={w.id} style={{ marginBottom: 10 }}>
+      {weeks.map((w, i) => {
+        const mo = w.label.match(/(\d+)\s*월/)?.[0] ?? "기타";
+        const prevMo =
+          i > 0 ? weeks[i - 1].label.match(/(\d+)\s*월/)?.[0] ?? "기타" : null;
+        const showHeader = mo !== prevMo;
+        return (
+          <div key={w.id}>
+            {showHeader && (
+              <div
+                className="muted"
+                style={{ marginTop: 12, marginBottom: 6, fontWeight: 700 }}
+              >
+                {mo}
+              </div>
+            )}
+            <div className="row" style={{ marginBottom: 10 }}>
+              <input
+                type="text"
+                value={w.label}
+                onChange={(e) => updateWeekLabel(w.id, e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button
+                className="danger"
+                onClick={() => removeWeek(w.id)}
+                disabled={weeks.length <= 1}
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
+        <button className="ghost small" onClick={addWeek}>
+          + 주차 추가
+        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="text"
-            value={w.label}
-            onChange={(e) => updateWeekLabel(w.id, e.target.value)}
-            style={{ flex: 1 }}
+            inputMode="numeric"
+            value={newMonth}
+            onChange={(e) =>
+              setNewMonth(Number(e.target.value.replace(/\D/g, "")) || 0)
+            }
+            style={{ width: 64 }}
+            aria-label="추가할 월"
           />
+          <span className="muted">월</span>
           <button
-            className="danger"
-            onClick={() => removeWeek(w.id)}
-            disabled={weeks.length <= 1}
+            className="ghost small"
+            onClick={() => newMonth && addMonth(newMonth)}
           >
-            삭제
+            + 해당 월 4주차 추가
           </button>
         </div>
-      ))}
-      <button className="ghost small" onClick={addWeek}>
-        + 주차 추가
-      </button>
+      </div>
 
       <div style={{ marginTop: 22 }}>
         <button onClick={save} disabled={saving}>
