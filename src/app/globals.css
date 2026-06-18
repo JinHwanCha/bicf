@@ -74,31 +74,84 @@
   --warn: #d99313;
 }
 
-/* 헤더의 테마 색상 선택 버튼 */
+/* 헤더의 테마 색상 선택 (팝업) */
 .theme-switch {
   margin-left: auto;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
-.theme-switch .swatch {
-  width: 22px;
-  height: 22px;
+.theme-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+
+.theme-trigger:hover {
+  background: var(--border);
+}
+
+.theme-trigger-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.swatch-dot {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  padding: 0;
-  transition: transform 0.12s, border-color 0.12s;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) inset;
 }
 
-.theme-switch .swatch:hover {
-  transform: scale(1.12);
-  background: initial;
+.theme-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 160px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.theme-switch .swatch.active {
-  border-color: var(--text);
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 9px 10px;
+}
+
+.theme-option:hover {
+  background: var(--panel-2);
+}
+
+.theme-option.active {
+  background: var(--panel-2);
+}
+
+.theme-check {
+  margin-left: auto;
+  color: var(--primary);
+  font-weight: 800;
 }
 
 * {
@@ -149,6 +202,26 @@ a {
 .nav a:hover {
   color: var(--text);
   background: var(--panel-2);
+}
+
+@media (max-width: 520px) {
+  .nav {
+    gap: 8px;
+    padding: 12px 14px;
+  }
+  .nav .brand {
+    font-size: 15px;
+  }
+  .nav a {
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+  .theme-trigger-icon {
+    display: none;
+  }
+  .theme-trigger {
+    padding: 6px 8px;
+  }
 }
 
 .container {
