@@ -28,11 +28,15 @@ export interface AttendanceRecord {
 export interface Week {
   id: string;
   label: string; // e.g. "9월 1주차"
+  /** Class date for this week, "YYYY-MM-DD" (local). Used for auto week selection. */
+  date?: string;
 }
 
 export interface Settings {
   semester: string;
   currentWeekId: string;
+  /** When true, the current week is derived from today's date instead of currentWeekId. */
+  autoWeek: boolean;
   weeks: Week[];
   /** "HH:mm" — first random grouping happens at this time. */
   signupDeadline: string;

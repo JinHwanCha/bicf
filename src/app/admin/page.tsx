@@ -10,8 +10,17 @@ import {
   type Settings,
   type Week,
 } from "@/lib/types";
+import { resolveCurrentWeekId } from "@/lib/week";
 
 type Tab = "groups" | "attendance" | "people" | "settings";
+
+/** Settings as returned by the API, with the date-resolved current week. */
+type SettingsResponse = Settings & { effectiveWeekId?: string };
+
+/** The effective current week id (auto date-based when enabled). */
+function effectiveWeekId(s: SettingsResponse): string {
+  return s.effectiveWeekId ?? s.currentWeekId;
+}
 
 /** Extract the "N월" month label from a week label like "9월 2주차". */
 function monthOf(label: string): string {
@@ -78,7 +87,7 @@ function EditableName({
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("groups");
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [session, setSession] = useState<GroupSession | null>(null);
@@ -196,7 +205,7 @@ function GroupsTab({
   onChange,
   flash,
 }: {
-  settings: Settings;
+  settings: SettingsResponse;
   people: Person[];
   attendance: AttendanceRecord[];
   session: GroupSession | null;
@@ -206,20 +215,18 @@ function GroupsTab({
   onChange: () => Promise<void>;
   flash: (m: string) => void;
 }) {
+  const weekId = effectiveWeekId(settings);
   const weekLabel =
-    settings.weeks.find((w) => w.id === settings.currentWeekId)?.label ??
-    settings.currentWeekId;
+    settings.weeks.find((w) => w.id === weekId)?.label ?? weekId;
 
   const attendeeIds = useMemo(
     () =>
       attendance
         .filter(
-          (a) =>
-            a.weekId === settings.currentWeekId &&
-            a.semester === settings.semester
+          (a) => a.weekId === weekId && a.semester === settings.semester
         )
         .map((a) => a.personId),
-    [attendance, settings]
+    [attendance, settings, weekId]
   );
 
   const attendeeCount = attendeeIds.length;
@@ -350,7 +357,7 @@ function AttendanceTab({
   people,
   attendance,
 }: {
-  settings: Settings;
+  settings: SettingsResponse;
   people: Person[];
   attendance: AttendanceRecord[];
 }) {
@@ -364,6 +371,7 @@ function AttendanceTab({
     return m;
   }, [semesterRecords]);
 
+  const curWeekId = effectiveWeekId(settings);
   const totalWeeks = settings.weeks.length || 1;
   const students = people.filter((p) => !p.isTeacher);
   const teachers = people.filter((p) => p.isTeacher);
@@ -379,7 +387,7 @@ function AttendanceTab({
   }, [settings.weeks]);
 
   const currentMonth = monthOf(
-    settings.weeks.find((w) => w.id === settings.currentWeekId)?.label ?? ""
+    settings.weeks.find((w) => w.id === curWeekId)?.label ?? ""
   );
 
   // "전체" shows all weeks; otherwise only the selected month's weeks.
@@ -393,7 +401,7 @@ function AttendanceTab({
       : settings.weeks.filter((w) => monthOf(w.label) === monthFilter);
 
   const currentWeekCount = semesterRecords.filter(
-    (a) => a.weekId === settings.currentWeekId
+    (a) => a.weekId === curWeekId
   ).length;
 
   // Attendance rate over the currently visible weeks (selected month or all).
@@ -653,20 +661,42 @@ function SettingsTab({
   onSaved,
   flash,
 }: {
-  settings: Settings;
+  settings: SettingsResponse;
   onSaved: () => Promise<void>;
   flash: (m: string) => void;
 }) {
   const [semester, setSemester] = useState(settings.semester);
   const [currentWeekId, setCurrentWeekId] = useState(settings.currentWeekId);
+  const [autoWeek, setAutoWeek] = useState(settings.autoWeek ?? true);
   const [signupDeadline, setSignupDeadline] = useState(settings.signupDeadline);
   const [classTime, setClassTime] = useState(settings.classTime);
   const [weeks, setWeeks] = useState<Week[]>(settings.weeks);
   const [newMonth, setNewMonth] = useState<number>(9);
   const [saving, setSaving] = useState(false);
 
+  function ymd(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  }
+  function addDays(date: string, days: number): string {
+    const d = new Date(`${date}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    return ymd(d);
+  }
+  function lastYear(ws: Week[]): number {
+    for (let i = ws.length - 1; i >= 0; i--) {
+      if (ws[i].date) return Number(ws[i].date!.slice(0, 4));
+    }
+    return new Date().getFullYear();
+  }
+
   function updateWeekLabel(id: string, label: string) {
     setWeeks((ws) => ws.map((w) => (w.id === id ? { ...w, label } : w)));
+  }
+  function updateWeekDate(id: string, date: string) {
+    setWeeks((ws) => ws.map((w) => (w.id === id ? { ...w, date } : w)));
   }
   function addWeek() {
     setWeeks((ws) => {
@@ -677,18 +707,24 @@ function SettingsTab({
       ).length;
       const id = `w${Date.now().toString(36)}`;
       const label = mo ? `${mo}월 ${moCount + 1}주차` : `${ws.length + 1}주차`;
-      return [...ws, { id, label }];
+      const date = last?.date ? addDays(last.date, 7) : undefined;
+      return [...ws, { id, label, date }];
     });
   }
   function addMonth(month: number) {
     const base = Date.now().toString(36);
-    setWeeks((ws) => [
-      ...ws,
-      ...[1, 2, 3, 4].map((n, i) => ({
-        id: `w${base}${i}`,
-        label: `${month}월 ${n}주차`,
-      })),
-    ]);
+    setWeeks((ws) => {
+      const year = lastYear(ws);
+      const first = `${year}-${String(month).padStart(2, "0")}-01`;
+      return [
+        ...ws,
+        ...[1, 2, 3, 4].map((n, i) => ({
+          id: `w${base}${i}`,
+          label: `${month}월 ${n}주차`,
+          date: addDays(first, (n - 1) * 7),
+        })),
+      ];
+    });
   }
   function removeWeek(id: string) {
     setWeeks((ws) => ws.filter((w) => w.id !== id));
@@ -697,6 +733,15 @@ function SettingsTab({
       if (remaining[0]) setCurrentWeekId(remaining[0].id);
     }
   }
+
+  // Live preview of which week today's date resolves to.
+  const liveWeekId = resolveCurrentWeekId(
+    { ...settings, autoWeek, currentWeekId, weeks },
+    new Date()
+  );
+  const liveWeekLabel =
+    weeks.find((w) => w.id === liveWeekId)?.label ?? "(없음)";
+  const datedCount = weeks.filter((w) => w.date).length;
 
   async function save() {
     setSaving(true);
@@ -707,6 +752,7 @@ function SettingsTab({
         body: JSON.stringify({
           semester,
           currentWeekId,
+          autoWeek,
           signupDeadline,
           classTime,
           weeks,
@@ -733,9 +779,10 @@ function SettingsTab({
           />
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <label>현재 주차</label>
+          <label>현재 주차 {autoWeek && "(자동)"}</label>
           <select
-            value={currentWeekId}
+            value={autoWeek ? liveWeekId : currentWeekId}
+            disabled={autoWeek}
             onChange={(e) => setCurrentWeekId(e.target.value)}
           >
             {weeks.map((w) => (
@@ -745,6 +792,41 @@ function SettingsTab({
             ))}
           </select>
         </div>
+      </div>
+
+      <div
+        className="field"
+        style={{
+          background: "var(--panel-2)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          padding: 14,
+        }}
+      >
+        <label className="checkbox" style={{ marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={autoWeek}
+            onChange={(e) => setAutoWeek(e.target.checked)}
+          />
+          실제 날짜 기준으로 현재 주차 자동 설정
+        </label>
+        {autoWeek ? (
+          <p className="muted" style={{ margin: 0 }}>
+            오늘 기준 자동 인식: <strong>{liveWeekLabel}</strong>
+            {datedCount === 0 && (
+              <>
+                {" "}
+                — ⚠️ 아래 주차에 <strong>수업 날짜</strong>를 입력해야 자동
+                전환됩니다.
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            수동 모드입니다. 위에서 현재 주차를 직접 선택하세요.
+          </p>
+        )}
       </div>
 
       <div className="row">
@@ -767,11 +849,16 @@ function SettingsTab({
       </div>
 
       <h3 style={{ marginTop: 14 }}>주차 목록</h3>
+      <p className="muted" style={{ marginTop: -6 }}>
+        각 주차에 <strong>수업 날짜</strong>를 넣으면, 자동 모드에서 그 날짜부터
+        다음 주차 전까지 해당 주차로 인식됩니다.
+      </p>
       {weeks.map((w, i) => {
         const mo = w.label.match(/(\d+)\s*월/)?.[0] ?? "기타";
         const prevMo =
           i > 0 ? weeks[i - 1].label.match(/(\d+)\s*월/)?.[0] ?? "기타" : null;
         const showHeader = mo !== prevMo;
+        const isCurrent = w.id === liveWeekId;
         return (
           <div key={w.id}>
             {showHeader && (
@@ -787,7 +874,17 @@ function SettingsTab({
                 type="text"
                 value={w.label}
                 onChange={(e) => updateWeekLabel(w.id, e.target.value)}
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: 120 }}
+              />
+              <input
+                type="date"
+                value={w.date ?? ""}
+                onChange={(e) => updateWeekDate(w.id, e.target.value)}
+                style={{
+                  width: 160,
+                  borderColor: isCurrent ? "var(--primary)" : undefined,
+                }}
+                title="수업 날짜"
               />
               <button
                 className="danger"

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readDB, updateDB } from "@/lib/db";
 import { assignLate, generateGroups } from "@/lib/classify";
+import { resolveCurrentWeekId } from "@/lib/week";
 import type { DB, GroupSession, Person } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ function attendeesFor(db: DB, semester: string, weekId: string): Person[] {
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const db = await readDB();
-  const weekId = searchParams.get("weekId") || db.settings.currentWeekId;
+  const weekId = searchParams.get("weekId") || resolveCurrentWeekId(db.settings);
   const id = sessionId(db.settings.semester, weekId);
   const session = db.sessions.find((s) => s.id === id) ?? null;
   return NextResponse.json(session);
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
 
   const result = await updateDB((db) => {
     const semester = db.settings.semester;
-    const weekId = body.weekId || db.settings.currentWeekId;
+    const weekId = body.weekId || resolveCurrentWeekId(db.settings);
     const id = sessionId(semester, weekId);
     const attendees = attendeesFor(db, semester, weekId);
 

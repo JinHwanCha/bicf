@@ -259,6 +259,7 @@ label {
 
 input[type="text"],
 input[type="time"],
+input[type="date"],
 select {
   width: 100%;
   padding: 12px 14px;

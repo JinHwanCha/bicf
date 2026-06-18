@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readDB } from "@/lib/db";
+import { resolveCurrentWeekId } from "@/lib/week";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const db = await readDB();
-  const weekId = searchParams.get("weekId") || db.settings.currentWeekId;
+  const weekId = searchParams.get("weekId") || resolveCurrentWeekId(db.settings);
   const semester = db.settings.semester;
   const id = `${semester}::${weekId}`;
   const session = db.sessions.find((s) => s.id === id) ?? null;

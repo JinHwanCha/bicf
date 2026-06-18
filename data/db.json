@@ -2,6 +2,7 @@
   "settings": {
     "semester": "2026-2학기",
     "currentWeekId": "w1",
+    "autoWeek": true,
     "weeks": [
       {
         "id": "w1",

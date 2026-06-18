@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { readDB, updateDB } from "@/lib/db";
+import { resolveCurrentWeekId } from "@/lib/week";
 import type { Settings } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const db = await readDB();
-  return NextResponse.json(db.settings);
+  const effectiveWeekId = resolveCurrentWeekId(db.settings);
+  // Expose the date-resolved week alongside the stored settings so the
+  // attendance/admin views always reflect "today" without manual updates.
+  return NextResponse.json({ ...db.settings, effectiveWeekId });
 }
 
 export async function PUT(req: Request) {
@@ -15,6 +19,8 @@ export async function PUT(req: Request) {
     if (typeof body.semester === "string") db.settings.semester = body.semester;
     if (typeof body.currentWeekId === "string")
       db.settings.currentWeekId = body.currentWeekId;
+    if (typeof body.autoWeek === "boolean")
+      db.settings.autoWeek = body.autoWeek;
     if (typeof body.signupDeadline === "string")
       db.settings.signupDeadline = body.signupDeadline;
     if (typeof body.classTime === "string")
@@ -22,5 +28,6 @@ export async function PUT(req: Request) {
     if (Array.isArray(body.weeks)) db.settings.weeks = body.weeks;
     return db.settings;
   });
-  return NextResponse.json(settings);
+  const effectiveWeekId = resolveCurrentWeekId(settings);
+  return NextResponse.json({ ...settings, effectiveWeekId });
 }

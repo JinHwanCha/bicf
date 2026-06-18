@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readDB, updateDB } from "@/lib/db";
 import { normalizeName, normalizePhoneLast4 } from "@/lib/normalize";
+import { resolveCurrentWeekId } from "@/lib/week";
 import { LEVELS, type KoreanLevel, type Person } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,8 @@ export async function POST(req: Request) {
   }
 
   const result = await updateDB((db) => {
-    const { semester, currentWeekId } = db.settings;
+    const semester = db.settings.semester;
+    const currentWeekId = resolveCurrentWeekId(db.settings);
 
     let person = db.people.find(
       (p) => p.nameKey === nameKey && p.phoneLast4 === phoneLast4

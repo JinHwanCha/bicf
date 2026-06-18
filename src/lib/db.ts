@@ -12,6 +12,7 @@ const DEFAULT_DB: DB = {
   settings: {
     semester: "2026-2학기",
     currentWeekId: "w1",
+    autoWeek: true,
     weeks: [
       { id: "w1", label: "9월 1주차" },
       { id: "w2", label: "9월 2주차" },

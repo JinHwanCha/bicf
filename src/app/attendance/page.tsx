@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { LEVELS, type KoreanLevel, type Settings } from "@/lib/types";
 
+type SettingsResponse = Settings & { effectiveWeekId?: string };
+
 interface CheckInResult {
   person: { id: string; name: string };
   alreadyChecked: boolean;
@@ -11,7 +13,7 @@ interface CheckInResult {
 }
 
 export default function AttendancePage() {
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [level, setLevel] = useState<KoreanLevel | null>(null);
@@ -29,7 +31,7 @@ export default function AttendancePage() {
   }, []);
 
   const currentWeek = settings?.weeks.find(
-    (w) => w.id === settings.currentWeekId
+    (w) => w.id === (settings.effectiveWeekId ?? settings.currentWeekId)
   );
 
   async function findMyGroup(personId: string) {
