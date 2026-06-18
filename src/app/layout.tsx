@@ -1,0 +1,28 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "출석체크 · 반별 분류",
+  description: "외국인 유학생 한국어반 출석 및 자동 조 편성",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ko">
+      <body>
+        <nav className="nav">
+          <span className="brand">📋 한국어반 출석</span>
+          <Link href="/attendance">출석체크</Link>
+          <Link href="/groups">조 편성</Link>
+          <Link href="/admin">관리자</Link>
+        </nav>
+        {children}
+      </body>
+    </html>
+  );
+}

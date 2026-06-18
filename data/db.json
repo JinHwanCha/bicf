@@ -1,0 +1,92 @@
+{
+  "settings": {
+    "semester": "2026-2학기",
+    "currentWeekId": "w1",
+    "weeks": [
+      {
+        "id": "w1",
+        "label": "9월 1주차"
+      },
+      {
+        "id": "w2",
+        "label": "9월 2주차"
+      },
+      {
+        "id": "w3",
+        "label": "9월 3주차"
+      },
+      {
+        "id": "w4",
+        "label": "9월 4주차"
+      }
+    ],
+    "signupDeadline": "19:30",
+    "classTime": "20:00"
+  },
+  "people": [
+    {
+      "id": "794d12b8-e16a-4f8d-819a-740774ec6122",
+      "name": "José Álvarez",
+      "nameKey": "josealvarez",
+      "phoneLast4": "1234",
+      "level": "중",
+      "isTeacher": false,
+      "isBasicTeacher": false,
+      "createdAt": "2026-06-18T05:14:57.073Z"
+    },
+    {
+      "id": "67c5bffe-e5a2-484e-b42c-acfcdf32ff2b",
+      "name": "차진환",
+      "nameKey": "차진환",
+      "phoneLast4": "7067",
+      "level": "상",
+      "isTeacher": true,
+      "isBasicTeacher": false,
+      "createdAt": "2026-06-18T05:46:44.255Z"
+    }
+  ],
+  "attendance": [
+    {
+      "id": "05b577fa-0497-4843-9b7e-d152df1fd923",
+      "personId": "794d12b8-e16a-4f8d-819a-740774ec6122",
+      "semester": "2026-2학기",
+      "weekId": "w1",
+      "date": "2026-06-18",
+      "checkedInAt": "2026-06-18T05:14:57.073Z"
+    },
+    {
+      "id": "40330d97-f223-46bc-b136-62448490a29a",
+      "personId": "67c5bffe-e5a2-484e-b42c-acfcdf32ff2b",
+      "semester": "2026-2학기",
+      "weekId": "w1",
+      "date": "2026-06-18",
+      "checkedInAt": "2026-06-18T05:46:44.255Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "2026-2학기::w1",
+      "semester": "2026-2학기",
+      "weekId": "w1",
+      "groups": [
+        {
+          "id": "g-1",
+          "name": "1조",
+          "isBasic": false,
+          "level": "중",
+          "teacherIds": [
+            "67c5bffe-e5a2-484e-b42c-acfcdf32ff2b"
+          ],
+          "studentIds": [
+            "794d12b8-e16a-4f8d-819a-740774ec6122"
+          ]
+        }
+      ],
+      "generatedAt": "2026-06-18T05:47:35.493Z",
+      "assignedPersonIds": [
+        "794d12b8-e16a-4f8d-819a-740774ec6122",
+        "67c5bffe-e5a2-484e-b42c-acfcdf32ff2b"
+      ]
+    }
+  ]
+}
