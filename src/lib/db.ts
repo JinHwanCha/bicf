@@ -63,15 +63,49 @@ function cleanEnv(v: string | undefined): string | undefined {
   return t || undefined;
 }
 
-// Vercel KV / Upstash Redis inject these when connected (several namings).
+// Find the first env var whose name ends with `suffix` (case-insensitive),
+// so custom Vercel prefixes like `bicf_KV_REST_API_URL` are picked up too.
+function envBySuffix(suffix: string): string | undefined {
+  const target = suffix.toLowerCase();
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.toLowerCase().endsWith(target)) {
+      const val = cleanEnv(v);
+      if (val) return val;
+    }
+  }
+  return undefined;
+}
+
+// Derive REST url + token from a `rediss://default:<token>@host:port` string.
+function fromConnString(
+  v: string | undefined
+): { url: string; token: string } | undefined {
+  const s = cleanEnv(v);
+  if (!s) return undefined;
+  try {
+    const u = new URL(s);
+    const token = decodeURIComponent(u.password || "");
+    if (!token || !u.hostname) return undefined;
+    return { url: `https://${u.hostname}`, token };
+  } catch {
+    return undefined;
+  }
+}
+
+const conn =
+  fromConnString(envBySuffix("KV_URL")) ||
+  fromConnString(envBySuffix("REDIS_URL"));
+
+// Vercel KV / Upstash Redis inject these when connected (any prefix). Fall
+// back to parsing the token/host out of the connection string.
 const REDIS_URL =
-  cleanEnv(process.env.KV_REST_API_URL) ||
-  cleanEnv(process.env.UPSTASH_REDIS_REST_URL) ||
-  cleanEnv(process.env.STORAGE_KV_REST_API_URL);
+  envBySuffix("KV_REST_API_URL") ||
+  envBySuffix("UPSTASH_REDIS_REST_URL") ||
+  conn?.url;
 const REDIS_TOKEN =
-  cleanEnv(process.env.KV_REST_API_TOKEN) ||
-  cleanEnv(process.env.UPSTASH_REDIS_REST_TOKEN) ||
-  cleanEnv(process.env.STORAGE_KV_REST_API_TOKEN);
+  envBySuffix("KV_REST_API_TOKEN") ||
+  envBySuffix("UPSTASH_REDIS_REST_TOKEN") ||
+  conn?.token;
 const useRedis = !!(REDIS_URL && REDIS_TOKEN);
 
 /* --------------------------------------------------------------------- */
