@@ -53,7 +53,18 @@ function normalize(parsed: Partial<DB> | null | undefined): DB {
 }
 
 /* --------------------------------------------------------------------- */
-/*  JSON file backend (single source of truth: data/db.json)             */
+/*  Backend selection                                                    */
+/* --------------------------------------------------------------------- */
+
+// Vercel KV / Upstash Redis inject these when connected (either naming).
+const REDIS_URL =
+  process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN =
+  process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+const useRedis = !!(REDIS_URL && REDIS_TOKEN);
+
+/* --------------------------------------------------------------------- */
+/*  JSON file backend (local development / persistent-disk hosts)        */
 /* --------------------------------------------------------------------- */
 
 // Serialize writes within a single process so concurrent requests can't
@@ -82,20 +93,22 @@ async function fileWrite(db: DB): Promise<void> {
   await fs.rename(tmp, DB_FILE);
 }
 
-/* --------------------------------------------------------------------- */
-/*  Public API                                                           */
-/* --------------------------------------------------------------------- */
-
-export async function readDB(): Promise<DB> {
-  return fileRead();
-}
-
-/** Run an atomic read-modify-write against data/db.json. */
-export function updateDB<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
+function fileUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
   const next = queue.then(async () => {
     const db = await fileRead();
     const result = await mutator(db);
-    await fileWrite(db);
+    try {
+      await fileWrite(db);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "EROFS" || code === "EACCES") {
+        throw new Error(
+          "저장 실패: 이 배포 환경은 파일 쓰기가 불가능합니다(예: Vercel). " +
+            "Vercel KV 또는 Upstash Redis를 연결해 KV_REST_API_URL / KV_REST_API_TOKEN 환경변수를 설정하세요."
+        );
+      }
+      throw err;
+    }
     return result;
   });
   // Keep the chain alive even if this mutation throws.
@@ -104,4 +117,88 @@ export function updateDB<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
     () => undefined
   );
   return next;
+}
+
+/* --------------------------------------------------------------------- */
+/*  Redis backend (Vercel / production)                                  */
+/* --------------------------------------------------------------------- */
+
+type RedisClient = {
+  get<T = unknown>(key: string): Promise<T | null>;
+  eval(
+    script: string,
+    keys: string[],
+    args: (string | number)[]
+  ): Promise<unknown>;
+};
+
+const REDIS_KEY = "bicf:db";
+const REDIS_VERSION_KEY = "bicf:db:v";
+
+let redisClient: RedisClient | null = null;
+
+async function getRedis(): Promise<RedisClient> {
+  if (redisClient) return redisClient;
+  const { Redis } = await import("@upstash/redis");
+  redisClient = new Redis({
+    url: REDIS_URL!,
+    token: REDIS_TOKEN!,
+  }) as unknown as RedisClient;
+  return redisClient;
+}
+
+async function redisRead(): Promise<DB> {
+  const redis = await getRedis();
+  // @upstash/redis auto-deserializes JSON values.
+  const stored = await redis.get<Partial<DB>>(REDIS_KEY);
+  return normalize(stored);
+}
+
+// Atomic compare-and-set: only writes if the version is unchanged, then
+// bumps it. Returns 1 on success, 0 if another writer won the race.
+const CAS_SCRIPT = `
+local v = redis.call('GET', KEYS[2])
+if (v == ARGV[1]) or (v == false and ARGV[1] == '0') then
+  redis.call('SET', KEYS[1], ARGV[2])
+  redis.call('INCR', KEYS[2])
+  return 1
+end
+return 0
+`;
+
+async function redisUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
+  const redis = await getRedis();
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const version = (await redis.get<number>(REDIS_VERSION_KEY)) ?? 0;
+    const stored = await redis.get<Partial<DB>>(REDIS_KEY);
+    const db = normalize(stored);
+
+    const result = await mutator(db);
+
+    const ok = (await redis.eval(
+      CAS_SCRIPT,
+      [REDIS_KEY, REDIS_VERSION_KEY],
+      [String(version), JSON.stringify(db)]
+    )) as number;
+
+    if (ok === 1) return result;
+    // Lost the race — back off briefly and retry with fresh data.
+    await new Promise((r) => setTimeout(r, 20 + Math.random() * 40));
+  }
+
+  throw new Error("redisUpdate: too many write conflicts, please retry");
+}
+
+/* --------------------------------------------------------------------- */
+/*  Public API                                                           */
+/* --------------------------------------------------------------------- */
+
+export async function readDB(): Promise<DB> {
+  return useRedis ? redisRead() : fileRead();
+}
+
+/** Run an atomic read-modify-write against the active store. */
+export function updateDB<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
+  return useRedis ? redisUpdate(mutator) : fileUpdate(mutator);
 }
