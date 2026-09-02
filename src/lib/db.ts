@@ -63,19 +63,6 @@ function cleanEnv(v: string | undefined): string | undefined {
   return t || undefined;
 }
 
-// Find the first env var whose name ends with `suffix` (case-insensitive),
-// so custom Vercel prefixes like `bicf_KV_REST_API_URL` are picked up too.
-function envBySuffix(suffix: string): string | undefined {
-  const target = suffix.toLowerCase();
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.toLowerCase().endsWith(target)) {
-      const val = cleanEnv(v);
-      if (val) return val;
-    }
-  }
-  return undefined;
-}
-
 // Derive REST url + token from a `rediss://default:<token>@host:port` string.
 function fromConnString(
   v: string | undefined
@@ -92,21 +79,49 @@ function fromConnString(
   }
 }
 
-const conn =
-  fromConnString(envBySuffix("KV_URL")) ||
-  fromConnString(envBySuffix("REDIS_URL"));
+// Collect every distinct {url, token} pair Vercel/Upstash may have injected —
+// under any prefix, from REST vars or `rediss://` connection strings. Multiple
+// (even stale) sets can coexist, so we probe each and use the first that works.
+function collectCredentials(): { url: string; token: string }[] {
+  const out: { url: string; token: string }[] = [];
+  const seen = new Set<string>();
+  const add = (url?: string, token?: string) => {
+    if (!url || !token) return;
+    const key = `${url}|${token}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ url, token });
+  };
 
-// Vercel KV / Upstash Redis inject these when connected (any prefix). Fall
-// back to parsing the token/host out of the connection string.
-const REDIS_URL =
-  envBySuffix("KV_REST_API_URL") ||
-  envBySuffix("UPSTASH_REDIS_REST_URL") ||
-  conn?.url;
-const REDIS_TOKEN =
-  envBySuffix("KV_REST_API_TOKEN") ||
-  envBySuffix("UPSTASH_REDIS_REST_TOKEN") ||
-  conn?.token;
-const useRedis = !!(REDIS_URL && REDIS_TOKEN);
+  const restUrls: Record<string, string> = {};
+  const restTokens: Record<string, string> = {};
+
+  for (const [k, raw] of Object.entries(process.env)) {
+    const val = cleanEnv(raw);
+    if (!val) continue;
+    const lk = k.toLowerCase();
+    // Connection strings carry host + token together (correctly paired).
+    if (lk.endsWith("kv_url") || lk.endsWith("redis_url")) {
+      const c = fromConnString(val);
+      if (c) add(c.url, c.token);
+    }
+    // REST url/token, grouped by their shared prefix so pairs stay matched.
+    for (const suf of ["kv_rest_api_url", "upstash_redis_rest_url"]) {
+      if (lk.endsWith(suf)) restUrls[k.slice(0, k.length - suf.length)] = val;
+    }
+    for (const suf of ["kv_rest_api_token", "upstash_redis_rest_token"]) {
+      if (lk.endsWith(suf)) restTokens[k.slice(0, k.length - suf.length)] = val;
+    }
+  }
+
+  for (const prefix of Object.keys(restUrls)) {
+    add(restUrls[prefix], restTokens[prefix]);
+  }
+  return out;
+}
+
+const REDIS_CREDENTIALS = collectCredentials();
+const useRedis = REDIS_CREDENTIALS.length > 0;
 
 /* --------------------------------------------------------------------- */
 /*  JSON file backend (local development / persistent-disk hosts)        */
@@ -170,6 +185,7 @@ function fileUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
 
 type RedisClient = {
   get<T = unknown>(key: string): Promise<T | null>;
+  ping(): Promise<string>;
   eval(
     script: string,
     keys: string[],
@@ -182,14 +198,36 @@ const REDIS_VERSION_KEY = "bicf:db:v";
 
 let redisClient: RedisClient | null = null;
 
+// Probe each candidate credential set and cache the first one that responds,
+// so leftover/stale env vars pointing at a deleted DB are skipped automatically.
 async function getRedis(): Promise<RedisClient> {
   if (redisClient) return redisClient;
   const { Redis } = await import("@upstash/redis");
-  redisClient = new Redis({
-    url: REDIS_URL!,
-    token: REDIS_TOKEN!,
-  }) as unknown as RedisClient;
-  return redisClient;
+  const errors: string[] = [];
+  for (const cred of REDIS_CREDENTIALS) {
+    const client = new Redis({
+      url: cred.url,
+      token: cred.token,
+    }) as unknown as RedisClient;
+    try {
+      await client.ping();
+      redisClient = client;
+      return client;
+    } catch (e) {
+      const host = (() => {
+        try {
+          return new URL(cred.url).host;
+        } catch {
+          return cred.url;
+        }
+      })();
+      errors.push(`${host}: ${(e as Error).message}`);
+    }
+  }
+  throw new Error(
+    `연결 가능한 Redis 저장소가 없습니다 (후보 ${REDIS_CREDENTIALS.length}개). ` +
+      errors.join(" | ")
+  );
 }
 
 async function redisRead(): Promise<DB> {
@@ -266,4 +304,41 @@ export async function updateDB<T>(
         "확인하고 재배포하세요."
     );
   }
+}
+
+/** Safe connectivity report (no secret values) for the /api/health endpoint. */
+export async function storeDiagnostics() {
+  const relatedEnvKeys = Object.keys(process.env).filter((k) =>
+    /(KV_REST_API_URL|KV_REST_API_TOKEN|KV_URL|REDIS_URL|UPSTASH_REDIS_REST_URL|UPSTASH_REDIS_REST_TOKEN)$/i.test(
+      k
+    )
+  );
+
+  const candidates: { host: string; ok: boolean; error: string | null }[] = [];
+  if (useRedis) {
+    const { Redis } = await import("@upstash/redis");
+    for (const cred of REDIS_CREDENTIALS) {
+      let host = cred.url;
+      try {
+        host = new URL(cred.url).host;
+      } catch {
+        /* keep raw */
+      }
+      try {
+        const c = new Redis({ url: cred.url, token: cred.token });
+        await c.ping();
+        candidates.push({ host, ok: true, error: null });
+      } catch (e) {
+        candidates.push({ host, ok: false, error: (e as Error).message });
+      }
+    }
+  }
+
+  return {
+    backend: useRedis ? "redis" : "file",
+    candidateCount: REDIS_CREDENTIALS.length,
+    anyReachable: candidates.some((c) => c.ok),
+    candidates,
+    relatedEnvKeys,
+  };
 }
