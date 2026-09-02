@@ -1,24 +1,36 @@
 import { promises as fs } from "fs";
 import path from "path";
-import type { DB } from "./types";
+import type { DB, Week } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
-const REDIS_KEY = "bicf:db";
-const REDIS_VERSION_KEY = "bicf:db:v";
+/** 9월 1주차 ~ 12월 3주차: 16 weekly sessions with class dates. */
+const DEFAULT_WEEKS: Week[] = [
+  { id: "w1", label: "9월 1주차", date: "2026-09-01" },
+  { id: "w2", label: "9월 2주차", date: "2026-09-08" },
+  { id: "w3", label: "9월 3주차", date: "2026-09-15" },
+  { id: "w4", label: "9월 4주차", date: "2026-09-22" },
+  { id: "w5", label: "9월 5주차", date: "2026-09-29" },
+  { id: "w6", label: "10월 1주차", date: "2026-10-06" },
+  { id: "w7", label: "10월 2주차", date: "2026-10-13" },
+  { id: "w8", label: "10월 3주차", date: "2026-10-20" },
+  { id: "w9", label: "10월 4주차", date: "2026-10-27" },
+  { id: "w10", label: "11월 1주차", date: "2026-11-03" },
+  { id: "w11", label: "11월 2주차", date: "2026-11-10" },
+  { id: "w12", label: "11월 3주차", date: "2026-11-17" },
+  { id: "w13", label: "11월 4주차", date: "2026-11-24" },
+  { id: "w14", label: "12월 1주차", date: "2026-12-01" },
+  { id: "w15", label: "12월 2주차", date: "2026-12-08" },
+  { id: "w16", label: "12월 3주차", date: "2026-12-15" },
+];
 
 const DEFAULT_DB: DB = {
   settings: {
     semester: "2026-2학기",
     currentWeekId: "w1",
     autoWeek: true,
-    weeks: [
-      { id: "w1", label: "9월 1주차" },
-      { id: "w2", label: "9월 2주차" },
-      { id: "w3", label: "9월 3주차" },
-      { id: "w4", label: "9월 4주차" },
-    ],
+    weeks: DEFAULT_WEEKS,
     signupDeadline: "19:30",
     classTime: "20:00",
   },
@@ -37,16 +49,8 @@ function normalize(parsed: Partial<DB> | null | undefined): DB {
   };
 }
 
-/**
- * Use Upstash Redis when its credentials are present (e.g. on Vercel),
- * otherwise fall back to a local JSON file for development.
- */
-const useRedis = !!(
-  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
-);
-
 /* --------------------------------------------------------------------- */
-/*  File backend (local development)                                     */
+/*  JSON file backend (single source of truth: data/db.json)             */
 /* --------------------------------------------------------------------- */
 
 // Serialize writes within a single process so concurrent requests can't
@@ -75,7 +79,16 @@ async function fileWrite(db: DB): Promise<void> {
   await fs.rename(tmp, DB_FILE);
 }
 
-function fileUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
+/* --------------------------------------------------------------------- */
+/*  Public API                                                           */
+/* --------------------------------------------------------------------- */
+
+export async function readDB(): Promise<DB> {
+  return fileRead();
+}
+
+/** Run an atomic read-modify-write against data/db.json. */
+export function updateDB<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
   const next = queue.then(async () => {
     const db = await fileRead();
     const result = await mutator(db);
@@ -88,85 +101,4 @@ function fileUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
     () => undefined
   );
   return next;
-}
-
-/* --------------------------------------------------------------------- */
-/*  Redis backend (Vercel / production)                                  */
-/* --------------------------------------------------------------------- */
-
-type RedisClient = {
-  get<T = unknown>(key: string): Promise<T | null>;
-  eval(
-    script: string,
-    keys: string[],
-    args: (string | number)[]
-  ): Promise<unknown>;
-};
-
-let redisClient: RedisClient | null = null;
-
-async function getRedis(): Promise<RedisClient> {
-  if (redisClient) return redisClient;
-  const { Redis } = await import("@upstash/redis");
-  redisClient = new Redis({
-    url: process.env.KV_REST_API_URL!,
-    token: process.env.KV_REST_API_TOKEN!,
-  }) as unknown as RedisClient;
-  return redisClient;
-}
-
-async function redisRead(): Promise<DB> {
-  const redis = await getRedis();
-  // @upstash/redis auto-deserializes JSON values.
-  const stored = await redis.get<Partial<DB>>(REDIS_KEY);
-  return normalize(stored);
-}
-
-// Atomic compare-and-set: only writes if the version is unchanged, then
-// bumps it. Returns 1 on success, 0 if another writer won the race.
-const CAS_SCRIPT = `
-local v = redis.call('GET', KEYS[2])
-if (v == ARGV[1]) or (v == false and ARGV[1] == '0') then
-  redis.call('SET', KEYS[1], ARGV[2])
-  redis.call('INCR', KEYS[2])
-  return 1
-end
-return 0
-`;
-
-async function redisUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
-  const redis = await getRedis();
-
-  for (let attempt = 0; attempt < 25; attempt++) {
-    const version = (await redis.get<number>(REDIS_VERSION_KEY)) ?? 0;
-    const stored = await redis.get<Partial<DB>>(REDIS_KEY);
-    const db = normalize(stored);
-
-    const result = await mutator(db);
-
-    const ok = (await redis.eval(
-      CAS_SCRIPT,
-      [REDIS_KEY, REDIS_VERSION_KEY],
-      [String(version), JSON.stringify(db)]
-    )) as number;
-
-    if (ok === 1) return result;
-    // Lost the race — back off briefly and retry with fresh data.
-    await new Promise((r) => setTimeout(r, 20 + Math.random() * 40));
-  }
-
-  throw new Error("redisUpdate: too many write conflicts, please retry");
-}
-
-/* --------------------------------------------------------------------- */
-/*  Public API (unchanged signatures)                                    */
-/* --------------------------------------------------------------------- */
-
-export async function readDB(): Promise<DB> {
-  return useRedis ? redisRead() : fileRead();
-}
-
-/** Run an atomic read-modify-write against the active store. */
-export function updateDB<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
-  return useRedis ? redisUpdate(mutator) : fileUpdate(mutator);
 }

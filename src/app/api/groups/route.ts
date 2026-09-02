@@ -32,6 +32,7 @@ export async function GET(req: Request) {
 interface PostBody {
   action: "generate" | "assignLate";
   weekId?: string;
+  numGroups?: number;
 }
 
 export async function POST(req: Request) {
@@ -44,7 +45,10 @@ export async function POST(req: Request) {
     const attendees = attendeesFor(db, semester, weekId);
 
     if (body.action === "generate") {
-      const { groups, assignedPersonIds } = generateGroups(attendees);
+      const { groups, assignedPersonIds } = generateGroups(
+        attendees,
+        body.numGroups ?? 4
+      );
       const session: GroupSession = {
         id,
         semester,

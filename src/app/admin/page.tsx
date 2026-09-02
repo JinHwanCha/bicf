@@ -232,6 +232,7 @@ function GroupsTab({
   const attendeeCount = attendeeIds.length;
   const assignedCount = session?.assignedPersonIds.length ?? 0;
   const unassigned = attendeeCount - assignedCount;
+  const [numGroups, setNumGroups] = useState(4);
 
   async function run(action: "generate" | "assignLate") {
     setBusy(true);
@@ -239,7 +240,9 @@ function GroupsTab({
       await fetch("/api/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify(
+          action === "generate" ? { action, numGroups } : { action }
+        ),
       });
       await onChange();
       flash(
@@ -281,8 +284,23 @@ function GroupsTab({
         )}
 
         <div className="row">
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="admin-num-groups">조 개수 (1~10)</label>
+            <select
+              id="admin-num-groups"
+              value={numGroups}
+              onChange={(e) => setNumGroups(Number(e.target.value))}
+              style={{ width: 110 }}
+            >
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}개
+                </option>
+              ))}
+            </select>
+          </div>
           <button onClick={() => run("generate")} disabled={busy}>
-            🎲 1차 랜덤 조 편성 ({settings.signupDeadline} 기준)
+            🎲 랜덤 조 편성 ({numGroups}개 조)
           </button>
           <button
             className="ghost"
@@ -293,8 +311,9 @@ function GroupsTab({
           </button>
         </div>
         <p className="muted" style={{ marginTop: 12 }}>
-          1차 편성은 마감 시간까지 출석한 인원을 랜덤 배치합니다. 이후 도착한
-          인원은 ‘추가 배치’로 기존 조에 합류시킵니다.
+          기초반 선택자는 자동으로 따로 편성되고, 각 조에는 선생님과 학생이 최소
+          1명씩 최대한 고르게 배정됩니다. 이후 도착한 인원은 ‘추가 배치’로 기존
+          조에 합류시킵니다.
         </p>
       </div>
 

@@ -29,6 +29,9 @@ interface Board {
 export default function GroupsPage() {
   const [board, setBoard] = useState<Board | null>(null);
   const [loading, setLoading] = useState(true);
+  const [numGroups, setNumGroups] = useState(4);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -45,10 +48,25 @@ export default function GroupsPage() {
 
   useEffect(() => {
     load();
-    // auto-refresh so late arrivals appear without manual reload
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
   }, [load]);
+
+  async function generate() {
+    setBusy(true);
+    setNotice("");
+    try {
+      await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate", numGroups }),
+      });
+      await load();
+      setNotice("조 편성을 완료했습니다.");
+    } catch {
+      setNotice("조 편성 중 오류가 발생했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const generatedLabel = board?.generatedAt
     ? new Date(board.generatedAt).toLocaleTimeString("ko-KR", {
@@ -68,11 +86,39 @@ export default function GroupsPage() {
         {board?.weekLabel && <div className="weekpill">{board.weekLabel}</div>}
       </div>
 
-      <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span className="muted">15초마다 자동 새로고침됩니다.</span>
-        <button className="ghost small" onClick={load}>
-          새로고침
-        </button>
+      <div className="card">
+        {notice && <div className="banner info">{notice}</div>}
+        <div
+          className="row"
+          style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}
+        >
+          <div className="field" style={{ margin: 0 }}>
+            <label htmlFor="numGroups">조 개수 (1~10)</label>
+            <select
+              id="numGroups"
+              value={numGroups}
+              onChange={(e) => setNumGroups(Number(e.target.value))}
+              style={{ width: 120 }}
+            >
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}개
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={generate} disabled={busy}>
+            {busy ? "편성 중…" : "🎲 조 편성하기"}
+          </button>
+          <button className="ghost small" onClick={load} disabled={busy}>
+            새로고침
+          </button>
+        </div>
+        <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+          ‘조 편성하기’를 누를 때마다 현재 출석 인원으로 다시 편성됩니다. 기초반
+          선택자는 자동으로 따로 편성되고, 각 조에는 선생님과 학생이 최소 1명씩
+          최대한 고르게 배정됩니다.
+        </p>
       </div>
 
       {loading ? (
@@ -82,7 +128,7 @@ export default function GroupsPage() {
       ) : !board?.hasSession || board.groups.length === 0 ? (
         <div className="card">
           <div className="banner info">
-            아직 조 편성 전입니다. 편성이 완료되면 이 화면에 조가 표시됩니다.
+            아직 조 편성 전입니다. 위의 ‘조 편성하기’ 버튼을 눌러주세요.
           </div>
         </div>
       ) : (
