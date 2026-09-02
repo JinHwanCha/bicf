@@ -917,7 +917,7 @@ function SettingsTab({
         );
       })}
 
-      <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
+      <div className="row" style={{ marginTop: 12 }}>
         <button className="ghost small" onClick={addWeek}>
           + 주차 추가
         </button>
