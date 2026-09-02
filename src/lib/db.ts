@@ -56,11 +56,22 @@ function normalize(parsed: Partial<DB> | null | undefined): DB {
 /*  Backend selection                                                    */
 /* --------------------------------------------------------------------- */
 
-// Vercel KV / Upstash Redis inject these when connected (either naming).
+// Strip accidental surrounding quotes / whitespace from dashboard-pasted vars.
+function cleanEnv(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  const t = v.trim().replace(/^['"]+|['"]+$/g, "").trim();
+  return t || undefined;
+}
+
+// Vercel KV / Upstash Redis inject these when connected (several namings).
 const REDIS_URL =
-  process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  cleanEnv(process.env.KV_REST_API_URL) ||
+  cleanEnv(process.env.UPSTASH_REDIS_REST_URL) ||
+  cleanEnv(process.env.STORAGE_KV_REST_API_URL);
 const REDIS_TOKEN =
-  process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  cleanEnv(process.env.KV_REST_API_TOKEN) ||
+  cleanEnv(process.env.UPSTASH_REDIS_REST_TOKEN) ||
+  cleanEnv(process.env.STORAGE_KV_REST_API_TOKEN);
 const useRedis = !!(REDIS_URL && REDIS_TOKEN);
 
 /* --------------------------------------------------------------------- */
@@ -195,10 +206,30 @@ async function redisUpdate<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
 /* --------------------------------------------------------------------- */
 
 export async function readDB(): Promise<DB> {
-  return useRedis ? redisRead() : fileRead();
+  if (!useRedis) return fileRead();
+  try {
+    return await redisRead();
+  } catch (err) {
+    // Don't blank out the whole UI if the store is unreachable — serve
+    // the committed defaults so pages still render, and log the reason.
+    console.error("[db] Redis read failed, falling back to file:", err);
+    return fileRead();
+  }
 }
 
 /** Run an atomic read-modify-write against the active store. */
-export function updateDB<T>(mutator: (db: DB) => T | Promise<T>): Promise<T> {
-  return useRedis ? redisUpdate(mutator) : fileUpdate(mutator);
+export async function updateDB<T>(
+  mutator: (db: DB) => T | Promise<T>
+): Promise<T> {
+  if (!useRedis) return fileUpdate(mutator);
+  try {
+    return await redisUpdate(mutator);
+  } catch (err) {
+    console.error("[db] Redis write failed:", err);
+    throw new Error(
+      "저장소(Redis)에 연결할 수 없습니다. Vercel 환경변수 KV_REST_API_URL / " +
+        "KV_REST_API_TOKEN 값이 실제로 존재하는 Upstash 데이터베이스를 가리키는지 " +
+        "확인하고 재배포하세요."
+    );
+  }
 }
