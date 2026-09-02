@@ -2,7 +2,10 @@ import { promises as fs } from "fs";
 import path from "path";
 import type { DB, Week } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// Point DATA_DIR at a mounted persistent disk in production (e.g. DATA_DIR=/data).
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
 /** 9월 1주차 ~ 12월 3주차: 16 weekly sessions with class dates. */
