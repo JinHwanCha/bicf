@@ -231,10 +231,6 @@ a {
 }
 
 .card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 22px;
   margin-bottom: 20px;
 }
 
