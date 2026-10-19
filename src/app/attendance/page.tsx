@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LEVELS, type KoreanLevel, type Settings } from "@/lib/types";
+import type { Settings } from "@/lib/types";
 
 type SettingsResponse = Settings & { effectiveWeekId?: string };
 
@@ -16,12 +16,11 @@ export default function AttendancePage() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [level, setLevel] = useState<KoreanLevel | null>(null);
+  const [isBasic, setIsBasic] = useState(false);
   const [isTeacher, setIsTeacher] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CheckInResult | null>(null);
-  const [groupName, setGroupName] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -34,31 +33,12 @@ export default function AttendancePage() {
     (w) => w.id === (settings.effectiveWeekId ?? settings.currentWeekId)
   );
 
-  async function findMyGroup(personId: string) {
-    try {
-      const session = await fetch("/api/groups").then((r) => r.json());
-      if (!session) {
-        setGroupName(null);
-        return;
-      }
-      const g = session.groups.find(
-        (grp: { teacherIds: string[]; studentIds: string[]; name: string }) =>
-          grp.teacherIds.includes(personId) ||
-          grp.studentIds.includes(personId)
-      );
-      setGroupName(g ? g.name : null);
-    } catch {
-      setGroupName(null);
-    }
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!name.trim()) return setError("이름을 입력해 주세요.");
     if (phone.replace(/\D/g, "").length < 4)
       return setError("전화번호 뒷자리 4자리를 입력해 주세요.");
-    if (!level) return setError("한국어 수준을 선택해 주세요.");
 
     setSubmitting(true);
     try {
@@ -68,7 +48,7 @@ export default function AttendancePage() {
         body: JSON.stringify({
           name,
           phoneLast4: phone,
-          level,
+          isBasic: !isTeacher && isBasic,
           isTeacher,
         }),
       });
@@ -78,7 +58,6 @@ export default function AttendancePage() {
         return;
       }
       setResult(data);
-      void findMyGroup(data.person.id);
     } catch {
       setError("네트워크 오류가 발생했습니다.");
     } finally {
@@ -88,10 +67,9 @@ export default function AttendancePage() {
 
   function reset() {
     setResult(null);
-    setGroupName(null);
     setName("");
     setPhone("");
-    setLevel(null);
+    setIsBasic(false);
     setIsTeacher(false);
   }
 
@@ -112,17 +90,8 @@ export default function AttendancePage() {
               ? `${result.person.name} 님은 이미 ${result.weekLabel} 출석이 완료되어 있어요.`
               : `${result.person.name} 님, ${result.weekLabel} 출석 완료! 🎉`}
           </div>
-          {isTeacher ? (
-            <p className="muted">선생님으로 등록되었습니다. 조 편성 후 배정됩니다.</p>
-          ) : groupName ? (
-            <div className="banner info">
-              배정된 조: <strong>{groupName}</strong>
-            </div>
-          ) : (
-            <p className="muted">
-              아직 조 편성 전입니다. {settings?.signupDeadline ?? "19:30"} 이후 조가
-              편성되면 이 화면에서 확인할 수 있어요.
-            </p>
+          {isTeacher && (
+            <p className="muted">선생님으로 등록되었습니다. 조 편성 시 배정됩니다.</p>
           )}
           <button onClick={reset}>다른 사람 출석하기</button>
         </div>
@@ -158,20 +127,18 @@ export default function AttendancePage() {
             />
           </div>
 
-          <div className="field">
-            <label>한국어 수준 (Korean level) · 1개 선택</label>
-            <div className="chips">
-              {LEVELS.map((lv) => (
-                <div
-                  key={lv}
-                  className={`chip ${level === lv ? "active" : ""}`}
-                  onClick={() => setLevel(lv)}
-                >
-                  {lv}
-                </div>
-              ))}
+          {!isTeacher && (
+            <div className="field">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={isBasic}
+                  onChange={(e) => setIsBasic(e.target.checked)}
+                />
+                기초반입니다 (Beginner class)
+              </label>
             </div>
-          </div>
+          )}
 
           <div className="field">
             <label className="checkbox">

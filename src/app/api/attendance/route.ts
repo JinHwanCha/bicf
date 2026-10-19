@@ -29,9 +29,14 @@ export async function GET(req: Request) {
 interface CheckInBody {
   name: string;
   phoneLast4: string;
-  level: KoreanLevel;
+  /** New flow: only "기초반 or not" is asked at check-in. */
+  isBasic?: boolean;
+  /** Legacy: explicit level (still accepted). */
+  level?: KoreanLevel;
   isTeacher?: boolean;
 }
+
+const DEFAULT_LEVEL: KoreanLevel = "중";
 
 export async function POST(req: Request) {
   const body = (await req.json()) as CheckInBody;
@@ -49,12 +54,17 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (!LEVELS.includes(body.level)) {
-    return NextResponse.json(
-      { error: "한국어 수준을 선택해 주세요." },
-      { status: 400 }
-    );
-  }
+  const explicitLevel =
+    body.level && LEVELS.includes(body.level) ? body.level : null;
+  const isBasic = !isTeacher && (!!body.isBasic || explicitLevel === "기초");
+
+  // Keep an existing non-basic level untouched; only toggle to/from "기초".
+  const resolveLevel = (prev?: KoreanLevel): KoreanLevel => {
+    if (explicitLevel) return explicitLevel;
+    if (isBasic) return "기초";
+    if (prev && prev !== "기초") return prev;
+    return DEFAULT_LEVEL;
+  };
 
   const result = await updateDB((db) => {
     const semester = db.settings.semester;
@@ -69,7 +79,7 @@ export async function POST(req: Request) {
         name,
         nameKey,
         phoneLast4,
-        level: body.level,
+        level: resolveLevel(),
         isTeacher,
         isBasicTeacher: false,
         createdAt: new Date().toISOString(),
@@ -78,7 +88,7 @@ export async function POST(req: Request) {
     } else {
       // keep latest level / teacher flag / display name
       person.name = name;
-      person.level = body.level;
+      person.level = resolveLevel(person.level);
       person.isTeacher = isTeacher;
     }
 

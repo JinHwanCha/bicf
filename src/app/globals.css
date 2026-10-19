@@ -605,3 +605,156 @@ th {
   font-size: 13px;
   margin-top: 4px;
 }
+
+/* ── 조 편성 (화면 전용) ─────────────────────────────────── */
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.section-head h2 {
+  margin: 0;
+}
+
+.warn-text {
+  color: var(--warn);
+}
+
+.gender-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.gender-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.gender-item.g-M {
+  border-color: #4f9dff;
+}
+
+.gender-item.g-F {
+  border-color: #ff6fa5;
+}
+
+.gender-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gender-toggle {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.gender-toggle button {
+  padding: 5px 10px;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.gender-toggle button:hover {
+  background: var(--border);
+}
+
+.gender-toggle button.on-M {
+  background: #4f9dff;
+  border-color: #4f9dff;
+  color: #fff;
+}
+
+.gender-toggle button.on-F {
+  background: #ff6fa5;
+  border-color: #ff6fa5;
+  color: #fff;
+}
+
+.roster-extra {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  font-size: 14px;
+}
+
+.roster-extra p {
+  margin: 6px 0;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.split-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.split-box select {
+  background: var(--panel);
+}
+
+.split-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.group-card.gender-M {
+  border-color: #4f9dff;
+}
+
+.group-card.gender-F {
+  border-color: #ff6fa5;
+}
+
+.group-card.unplaced {
+  border-style: dashed;
+  border-color: var(--warn);
+}
+
+.member-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+button.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+button.icon-btn:hover {
+  background: transparent;
+  color: var(--danger);
+}
+
+select.mini-select {
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 8px;
+  background: var(--panel);
+}
